@@ -22,3 +22,5 @@ types-setuptools>=68.0.0
 # Documentation
 sphinx>=7.0.0
 sphinx-rtd-theme>=1.2.0
+
+gunicorn
