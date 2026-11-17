@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Parking Management System</title>
+    <meta name="description" content="Clean and simple Smart Parking Availability, Reservation, and Queue Notification System">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Clean White CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="light-theme">
+
+    <!-- Toast Notification Banner Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand" onclick="App.showLocationsView()">
+                <div class="brand-icon-box">
+                    <i class="fa-solid fa-square-parking"></i>
+                </div>
+                <div class="brand-info">
+                    <span class="brand-title">Smart Parking</span>
+                    <span class="brand-subtitle">Availability & Reservation System</span>
+                </div>
+            </div>
+
+            <!-- Navigation Links -->
+            <nav class="nav-links">
+                <button class="nav-link active" id="nav-btn-locations" onclick="App.showLocationsView()">
+                    <i class="fa-solid fa-location-dot"></i> Parking Locations
+                </button>
+                <button class="nav-link" id="nav-btn-map" onclick="App.showMapView()">
+                    <i class="fa-solid fa-map-location-dot"></i> Parking Map
+                </button>
+                <button class="nav-link" id="nav-btn-queue" onclick="App.showQueueView()">
+                    <i class="fa-solid fa-users"></i> Queue (<span id="nav-queue-count">0</span>)
+                </button>
+                <button class="nav-link" id="nav-btn-camera" onclick="App.showCameraView()">
+                    <i class="fa-solid fa-video"></i> Live Camera
+                </button>
+                <button class="nav-link admin-only-control hidden" id="nav-btn-admin" onclick="App.showAdminView()">
+                    <i class="fa-solid fa-user-shield"></i> Admin Panel
+                </button>
+            </nav>
+
+            <!-- User / Auth Profile (Admin only) -->
+            <div class="nav-auth">
+                <div id="user-pill" class="user-pill admin-only-control hidden">
+                    <span class="user-role-badge" id="user-role-text">Admin</span>
+                    <button class="btn-text" onclick="App.handleLogout()" title="Logout">Logout</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Active User Reservation Banner (If User Has An Active 2-Minute Reservation) -->
+    <div id="user-reservation-banner" class="user-reservation-banner hidden">
+        <div class="banner-inner">
+            <div class="resv-badge">
+                <span class="dot-orange"></span> <strong>MY RESERVATION:</strong>
+            </div>
+            <div class="resv-details">
+                <span id="resv-banner-loc">NMIT Main Gate Parking</span> • 
+                Slot: <strong id="resv-banner-slot">A04</strong> (<span id="resv-banner-type">Car</span>) • 
+                Vehicle: <code id="resv-banner-plate">KA01AB1234</code> • 
+                Time Remaining: <strong class="text-orange" id="resv-banner-timer">01:59</strong>
+            </div>
+            <div class="resv-actions">
+                <button class="btn btn-sm btn-success" onclick="App.confirmArrival()">
+                    <i class="fa-solid fa-check"></i> I've Arrived
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="App.cancelReservation()">
+                    <i class="fa-solid fa-xmark"></i> Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <main class="main-content">
+
+        <!-- ==================== VIEW 1: PARKING LOCATIONS & NEARBY SEARCH ==================== -->
+        <section id="view-locations" class="page-view active">
+            
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Find Parking</h1>
+                    <p class="page-subtitle" id="location-view-subtitle">Showing parking locations near you (within 1 km)</p>
+                </div>
+                <!-- Search & Filters -->
+                <div class="search-filter-box">
+                    <div class="search-input-wrap">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="parking-search-input" class="search-input" placeholder="Search parking location (e.g. DMart, Main Gate)...">
+                        <button id="search-clear-btn" class="search-clear-btn hidden" onclick="App.clearSearch()">&times;</button>
+                    </div>
+                    <div class="distance-filter-pills" role="radiogroup" aria-label="Distance Filter">
+                        <button class="dist-pill active" data-dist="1" onclick="App.filterByDistance(1)">1 km</button>
+                        <button class="dist-pill" data-dist="2" onclick="App.filterByDistance(2)">2 km</button>
+                        <button class="dist-pill" data-dist="5" onclick="App.filterByDistance(5)">5 km</button>
+                        <button class="dist-pill" data-dist="all" onclick="App.filterByDistance('all')">All</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Locations Cards Grid -->
+            <div id="locations-cards-container" class="locations-cards-grid">
+                <!-- Populated dynamically by JS -->
+            </div>
+        </section>
+
+        <!-- ==================== VIEW 2: TOP-DOWN PARKING MAP LAYOUT ==================== -->
+        <section id="view-map" class="page-view">
+            
+            <div class="map-header">
+                <div class="map-title-wrap">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="App.showLocationsView()">
+                        <i class="fa-solid fa-arrow-left"></i> Back to Locations
+                    </button>
+                    <div>
+                        <h1 class="page-title" id="map-location-title">NMIT Main Gate Parking</h1>
+                        <p class="page-subtitle" id="map-location-meta">📍 0.4 km away • Top-Down Parking Diagram</p>
+                    </div>
+                </div>
+
+                <div class="map-stats-bar">
+                    <div class="map-stat-chip green">
+                        <span class="chip-dot green"></span> <strong id="map-stat-avail">7</strong> Available
+                    </div>
+                    <div class="map-stat-chip red">
+                        <span class="chip-dot red"></span> <strong id="map-stat-occ">8</strong> Occupied
+                    </div>
+                    <div class="map-stat-chip orange">
+                        <span class="chip-dot orange"></span> <strong id="map-stat-resv">0</strong> Reserved
+                    </div>
+                    <button class="btn btn-sm btn-outline-primary" onclick="App.openQueueModal()">
+                        <i class="fa-solid fa-user-plus"></i> Join Queue
+                    </button>
+                </div>
+            </div>
+
+            <!-- Parking Diagram Container -->
+            <div class="parking-diagram-card">
+                
+                <!-- Diagram Entry Indicator -->
+                <div class="diagram-entry-exit entry">
+                    <i class="fa-solid fa-arrow-down"></i> ENTRY
+                </div>
+
+                <!-- CAR PARKING SECTION -->
+                <div class="diagram-section">
+                    <div class="diagram-section-header">
+                        <div class="section-title-tag">
+                            <i class="fa-solid fa-car-side"></i> CAR PARKING SLOTS
+                        </div>
+                        <span class="section-summary-text" id="car-slots-meta">10 Slots</span>
+                    </div>
+
+                    <div id="diagram-car-slots" class="diagram-slots-row car-row">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+
+                <!-- CENTRAL DRIVEWAY -->
+                <div class="diagram-driveway">
+                    <div class="driveway-line"></div>
+                    <div class="driveway-text">
+                        <i class="fa-solid fa-arrow-right"></i> DRIVEWAY / AISLE (ONE WAY) <i class="fa-solid fa-arrow-right"></i>
+                    </div>
+                    <div class="driveway-line"></div>
+                </div>
+
+                <!-- BIKE PARKING SECTION -->
+                <div class="diagram-section">
+                    <div class="diagram-section-header">
+                        <div class="section-title-tag bike-tag">
+                            <i class="fa-solid fa-motorcycle"></i> BIKE / MOTORCYCLE PARKING SLOTS
+                        </div>
+                        <span class="section-summary-text" id="bike-slots-meta">5 Slots</span>
+                    </div>
+
+                    <div id="diagram-bike-slots" class="diagram-slots-row bike-row">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+
+                <!-- Diagram Exit Indicator -->
+                <div class="diagram-entry-exit exit">
+                    <i class="fa-solid fa-arrow-down"></i> EXIT
+                </div>
+
+            </div>
+
+            <!-- Map Legend -->
+            <div class="diagram-legend">
+                <div class="legend-item"><span class="legend-chip green"></span> 🟢 AVAILABLE (Click to reserve for 2 mins)</div>
+                <div class="legend-item"><span class="legend-chip red"></span> 🔴 OCCUPIED</div>
+                <div class="legend-item"><span class="legend-chip orange"></span> 🟠 RESERVED (Active countdown)</div>
+            </div>
+
+        </section>
+
+        <!-- ==================== VIEW 3: QUEUE MANAGEMENT ==================== -->
+        <section id="view-queue" class="page-view">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Parking Queue Management</h1>
+                    <p class="page-subtitle">Waiting list for drivers when parking is full. First waiting user is notified automatically when a slot opens.</p>
+                </div>
+                <button class="btn btn-primary" onclick="App.openQueueModal()">
+                    <i class="fa-solid fa-plus"></i> Add Vehicle to Queue
+                </button>
+            </div>
+
+            <div class="content-card">
+                <div class="table-responsive">
+                    <table class="clean-table" id="queue-table">
+                        <thead>
+                            <tr>
+                                <th>Position</th>
+                                <th>Driver Name</th>
+                                <th>Vehicle Plate</th>
+                                <th>Vehicle Type</th>
+                                <th>Location</th>
+                                <th>Joined Time</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queue-table-body">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== VIEW 4: LIVE CAMERA (YOLOv8) ==================== -->
+        <section id="view-camera" class="page-view">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Live YOLOv8 Camera Detection</h1>
+                    <p class="page-subtitle">Mode 1: Real-time computer vision vehicle and slot occupancy detection (NMIT Main Gate).</p>
+                </div>
+                <div class="header-actions-group">
+                    <div class="camera-status-pill">
+                        <span class="dot-green"></span> Live Stream Active
+                    </div>
+                    <!-- Admin-Only Edit Parking Slots Button -->
+                    <button id="btn-edit-parking-slots" class="btn btn-primary btn-sm admin-only-control hidden" onclick="App.openSlotEditor()">
+                        <i class="fa-solid fa-pen-to-square"></i> Edit Parking Slots
+                    </button>
+                </div>
+            </div>
+
+            <!-- 1. Normal Live Video Feed Display -->
+            <div id="camera-live-container" class="content-card camera-card">
+                <div class="video-container">
+                    <img id="camera-stream" src="{{ url_for('video_feed') }}" alt="Live YOLOv8 Detection Stream" class="video-stream-img" onerror="App.handleStreamError(this)">
+                </div>
+                <div class="camera-metrics-bar">
+                    <div class="metric-item">Cars Detected: <strong id="cam-cars-count">0</strong></div>
+                    <div class="metric-item">Bikes Detected: <strong id="cam-bikes-count">0</strong></div>
+                    <div class="metric-item">Free Slots: <strong class="text-green" id="cam-free-count">0</strong></div>
+                    <div class="metric-item">Occupied Slots: <strong class="text-red" id="cam-occ-count">0</strong></div>
+                    <div class="metric-item">FPS: <strong id="cam-fps-count">28.5</strong></div>
+                </div>
+            </div>
+
+            <!-- 2. Admin Interactive Parking Slot Boundary Editor (Hidden by default) -->
+            <div id="camera-slot-editor-container" class="content-card slot-editor-card hidden">
+                <div class="editor-header-bar">
+                    <div class="editor-title-wrap">
+                        <h2><i class="fa-solid fa-draw-polygon text-primary"></i> Edit Parking Slot Boundaries</h2>
+                        <p class="editor-subtext">Click & drag to move or resize slot boundaries. Assign IDs (e.g. A01, B01) and vehicle types.</p>
+                    </div>
+                    <div class="editor-actions-wrap">
+                        <button class="btn btn-sm btn-outline-primary" onclick="App.addEditorSlot('Car')">
+                            <i class="fa-solid fa-plus"></i> Add Car Slot
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary" onclick="App.addEditorSlot('Bike')">
+                            <i class="fa-solid fa-plus"></i> Add Bike Slot
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="App.resetEditorDefaultSlots()">
+                            <i class="fa-solid fa-rotate"></i> Reset Default Grid
+                        </button>
+                        <button class="btn btn-sm btn-success" onclick="App.saveEditedSlots()">
+                            <i class="fa-solid fa-floppy-disk"></i> Save Parking Slots
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="App.closeSlotEditor()">
+                            <i class="fa-solid fa-xmark"></i> Close Editor
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Editor Workspace -->
+                <div class="editor-workspace">
+                    <!-- Left: Interactive Canvas -->
+                    <div class="editor-canvas-container">
+                        <div class="canvas-scroll-wrapper" id="canvas-scroll-wrap">
+                            <canvas id="slot-editor-canvas" width="1100" height="720"></canvas>
+                        </div>
+                        <div class="canvas-hint-banner">
+                            <i class="fa-solid fa-circle-info"></i> <strong>How to edit:</strong> Click a slot to select • Drag box to move • Drag blue corner handle to resize • Use properties panel on the right.
+                        </div>
+                    </div>
+
+                    <!-- Right: Slot Properties Inspector Panel -->
+                    <div class="editor-inspector-panel">
+                        <div class="inspector-header">
+                            <h3>Slot Properties</h3>
+                            <span id="inspector-selected-tag" class="badge-pill gray">None Selected</span>
+                        </div>
+
+                        <div id="inspector-form-wrap" class="inspector-form-body">
+                            <div class="form-group">
+                                <label>Slot ID / Label</label>
+                                <input type="text" id="inspector-slot-id" class="form-input" placeholder="e.g. A01" oninput="App.onInspectorInputChange()">
+                            </div>
+
+                            <div class="form-group">
+                                <label>Vehicle Type</label>
+                                <select id="inspector-slot-type" class="form-select" onchange="App.onInspectorInputChange()">
+                                    <option value="Car">🚗 Car Slot</option>
+                                    <option value="Bike">🏍 Bike Slot</option>
+                                </select>
+                            </div>
+
+                            <div class="form-row-2col">
+                                <div class="form-group">
+                                    <label>X Position</label>
+                                    <input type="number" id="inspector-slot-x" class="form-input" oninput="App.onInspectorInputChange()">
+                                </div>
+                                <div class="form-group">
+                                    <label>Y Position</label>
+                                    <input type="number" id="inspector-slot-y" class="form-input" oninput="App.onInspectorInputChange()">
+                                </div>
+                            </div>
+
+                            <div class="form-row-2col">
+                                <div class="form-group">
+                                    <label>Width</label>
+                                    <input type="number" id="inspector-slot-w" class="form-input" oninput="App.onInspectorInputChange()">
+                                </div>
+                                <div class="form-group">
+                                    <label>Height</label>
+                                    <input type="number" id="inspector-slot-h" class="form-input" oninput="App.onInspectorInputChange()">
+                                </div>
+                            </div>
+
+                            <div class="inspector-btn-group">
+                                <button class="btn btn-outline-danger btn-sm" onclick="App.deleteSelectedEditorSlot()">
+                                    <i class="fa-solid fa-trash"></i> Delete Slot
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="App.duplicateSelectedEditorSlot()">
+                                    <i class="fa-solid fa-copy"></i> Duplicate
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- All Slots Quick Selector List -->
+                        <div class="inspector-slots-list-section">
+                            <h4>Configured Slots (<span id="inspector-slots-count">0</span>)</h4>
+                            <div id="inspector-slots-chips-container" class="inspector-chips-grid">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== VIEW 5: ADMIN PANEL ==================== -->
+        <section id="view-admin" class="page-view">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Administrator Dashboard</h1>
+                    <p class="page-subtitle">Manage active reservations, audit logs, and demo data reset.</p>
+                </div>
+                <button class="btn btn-outline-danger btn-sm" onclick="App.handleResetDemo()">
+                    <i class="fa-solid fa-rotate-left"></i> Reset Demo Mock Data
+                </button>
+            </div>
+
+            <!-- Active 2-Minute Reservations Table -->
+            <div class="content-card mb-4">
+                <div class="card-title-bar">
+                    <h2><i class="fa-regular fa-clock text-orange"></i> Active 2-Minute Reservations</h2>
+                    <span class="badge-pill orange" id="admin-resv-count">0 Active</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="clean-table" id="admin-reservations-table">
+                        <thead>
+                            <tr>
+                                <th>Slot</th>
+                                <th>Driver Name</th>
+                                <th>Vehicle Plate</th>
+                                <th>Vehicle Type</th>
+                                <th>Location</th>
+                                <th>Status</th>
+                                <th>Time Remaining</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-resv-table-body">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Parking History Audit Log -->
+            <div class="content-card">
+                <div class="card-title-bar">
+                    <h2><i class="fa-solid fa-clock-rotate-left"></i> Parking Transition History (FR7)</h2>
+                </div>
+                <div class="table-responsive">
+                    <table class="clean-table" id="history-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Location</th>
+                                <th>Slot Number</th>
+                                <th>Vehicle Type</th>
+                                <th>Vehicle Plate</th>
+                                <th>Previous Status</th>
+                                <th>New Status</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-table-body">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ==================== MODAL: 2-MINUTE RESERVATION ==================== -->
+    <div id="reservation-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="fa-regular fa-clock text-orange"></i> Reserve Slot <span id="modal-slot-title">A04</span></h3>
+                <button class="modal-close" onclick="App.closeReservationModal()">&times;</button>
+            </div>
+            <form id="reservation-form" onsubmit="App.handleReservationSubmit(event)">
+                <div class="form-group">
+                    <label>Location</label>
+                    <input type="text" id="modal-resv-location" class="form-input readonly" readonly value="NMIT Main Gate Parking">
+                </div>
+                <div class="form-group">
+                    <label>Driver / User Name *</label>
+                    <input type="text" id="modal-resv-name" class="form-input" placeholder="e.g. Rahul Sharma" required>
+                </div>
+                <div class="form-group">
+                    <label>Vehicle Type</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="resv-vtype" value="Car" id="resv-type-car" checked> 🚗 Car
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="resv-vtype" value="Bike" id="resv-type-bike"> 🏍 Bike
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Vehicle Plate Number *</label>
+                    <input type="text" id="modal-resv-plate" class="form-input" placeholder="e.g. KA01AB1234" required>
+                    <span class="input-hint">Slot will be held for <strong>2 minutes</strong>. Arrive and click 'I've Arrived' to confirm.</span>
+                </div>
+                <div id="resv-error-banner" class="alert-error hidden"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" onclick="App.closeReservationModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-lock"></i> Reserve Slot</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL: JOIN QUEUE ==================== -->
+    <div id="queue-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="fa-solid fa-user-plus text-primary"></i> Join Parking Queue</h3>
+                <button class="modal-close" onclick="App.closeQueueModal()">&times;</button>
+            </div>
+            <form id="queue-form" onsubmit="App.handleQueueSubmit(event)">
+                <div class="form-group">
+                    <label>Driver Name *</label>
+                    <input type="text" id="q-driver-name" class="form-input" placeholder="e.g. Rahul Sharma" required>
+                </div>
+                <div class="form-group">
+                    <label>Vehicle Plate Number *</label>
+                    <input type="text" id="q-plate-number" class="form-input" placeholder="e.g. KA05XY5678" required>
+                </div>
+                <div class="form-group">
+                    <label>Vehicle Type</label>
+                    <select id="q-vtype-select" class="form-select">
+                        <option value="Car" selected>🚗 Car</option>
+                        <option value="Bike">🏍 Bike</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Location</label>
+                    <select id="q-location-select" class="form-select">
+                        <option value="1">NMIT Main Gate Parking</option>
+                        <option value="2">NMIT Hostel Parking</option>
+                        <option value="3">NMIT Academic Block Parking</option>
+                        <option value="4">NMIT Library Parking</option>
+                        <option value="5">DMart Parking</option>
+                    </select>
+                </div>
+                <div id="queue-error-banner" class="alert-error hidden"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" onclick="App.closeQueueModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Join Queue</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL: ADMIN LOGIN ==================== -->
+    <div id="login-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="fa-solid fa-shield-halved text-primary"></i> Admin Authentication</h3>
+                <button class="modal-close" onclick="App.closeLoginModal()">&times;</button>
+            </div>
+            <div class="demo-login-tip" onclick="App.fillDemoLogin()">
+                💡 Demo Quick Fill: <strong>admin</strong> / <strong>admin123</strong> (Click here)
+            </div>
+            <form id="login-form" onsubmit="App.handleLoginSubmit(event)">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="admin-user-input" class="form-input" placeholder="admin" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="admin-pass-input" class="form-input" placeholder="admin123" required>
+                </div>
+                <div id="login-error-banner" class="alert-error hidden"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" onclick="App.closeLoginModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Sign In</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- App Subtle Footer -->
+    <footer class="app-footer">
+        <div class="footer-container">
+            <span>Smart Parking Availability & Queue Notification System</span>
+            <span class="footer-dot">•</span>
+            <span>NMIT Campus Edition</span>
+            <span class="footer-dot">•</span>
+            <a href="#admin-login" class="subtle-admin-trigger" onclick="App.openLoginModal(event)" title="Admin Authentication"><i class="fa-solid fa-lock"></i></a>
+        </div>
+    </footer>
+
+    <!-- Clean White App JS -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
